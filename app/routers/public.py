@@ -13,14 +13,17 @@ from app.schemas.portfolio import PortfolioItemResponse
 router = APIRouter(prefix="/public", tags=["public"])
 
 
-@router.get("/home")
-async def get_home_data(db: AsyncSession = Depends(get_db)):
-    """Data for the home page (categories, featured cakes, bakeries)."""
-    # Categories
+@router.get("/categories")
+async def get_public_categories(db: AsyncSession = Depends(get_db)):
+    """Data for category browsing and filters."""
     categories_result = await db.execute(select(Category).order_by(Category.name))
     categories = categories_result.scalars().all()
-    
-    # Featured cakes
+    return {"categories": [CategoryResponse.model_validate(c).model_dump() for c in categories]}
+
+
+@router.get("/featured-cakes")
+async def get_featured_cakes(db: AsyncSession = Depends(get_db)):
+    """Featured and available cakes for the homepage showcase."""
     cakes_result = await db.execute(
         select(Cake)
         .options(selectinload(Cake.bakery), selectinload(Cake.category))
@@ -44,8 +47,13 @@ async def get_home_data(db: AsyncSession = Depends(get_db)):
         supp_stmt = supp_stmt.order_by(desc(Cake.createdAt)).limit(12 - len(featured_cakes))
         supp_res = await db.execute(supp_stmt)
         featured_cakes.extend(supp_res.scalars().all())
-    
-    # Bakeries: Show all approved bakeries (up to 24), newest first so new bakeries appear
+
+    return {"featuredCakes": [CakeResponse.model_validate(c).model_dump() for c in featured_cakes]}
+
+
+@router.get("/featured-bakeries")
+async def get_featured_bakeries(db: AsyncSession = Depends(get_db)):
+    """Approved bakeries showcase with cake counts."""
     bakeries_result = await db.execute(
         select(Bakery, func.count(Cake.id).label("cake_count"))
         .outerjoin(Cake, Bakery.id == Cake.bakeryId)
@@ -61,11 +69,20 @@ async def get_home_data(db: AsyncSession = Depends(get_db)):
         b_dict["cake_count"] = count
         b_dict["_count"] = {"cakes": count}
         bakeries.append(b_dict)
-        
+
+    return {"bakeries": bakeries}
+
+
+@router.get("/home")
+async def get_home_data(db: AsyncSession = Depends(get_db)):
+    """Combined data for the home page (kept for backwards compatibility)."""
+    categories_res = await get_public_categories(db)
+    cakes_res = await get_featured_cakes(db)
+    bakeries_res = await get_featured_bakeries(db)
     return {
-        "categories": [CategoryResponse.model_validate(c).model_dump() for c in categories],
-        "featuredCakes": [CakeResponse.model_validate(c).model_dump() for c in featured_cakes],
-        "bakeries": bakeries
+        "categories": categories_res["categories"],
+        "featuredCakes": cakes_res["featuredCakes"],
+        "bakeries": bakeries_res["bakeries"],
     }
 
 
