@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "FastAPI backend for Crumbly marketplace"
 requires-python = ">=3.11, <3.14"
 dependencies = [
-    "fastapi==0.115.12",
+    "fastapi[standard]==0.122.0",
     "uvicorn[standard]==0.34.3",
     "sqlalchemy[asyncio]==2.0.41",
     "asyncpg==0.31.0",
