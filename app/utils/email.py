@@ -10,6 +10,7 @@ from email.message import EmailMessage
 from email.utils import formataddr
 import logging
 import smtplib
+import time
 
 from app.config import get_settings
 
@@ -25,41 +26,57 @@ def _send_smtp_sync(
     settings = get_settings()
 
     if not settings.smtp_host:
-        logger.info(
-            f"[EMAIL DEV SIMULATION] To: {to_email} | Subject: {subject}\n"
-            f"Content Preview:\n{text_content or html_content}"
+        logger.warning(
+            f"SMTP is not configured (SMTP_HOST is empty). Email to {to_email} ('{subject}') was not delivered. "
+            f"Please configure SMTP settings (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD) to deliver emails to inbox."
         )
-        return True
-
-    try:
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        sender_email = settings.smtp_from_email or settings.smtp_user or "no-reply@crumbly.co.ke"
-        msg["From"] = formataddr((settings.smtp_from_name, sender_email))
-        msg["To"] = to_email
-
-        plain = text_content or "Please open this email in an HTML-compatible client to view its contents."
-        msg.set_content(plain)
-        msg.add_alternative(html_content, subtype="html")
-
-        if settings.smtp_ssl:
-            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=15) as server:
-                if settings.smtp_user and settings.smtp_password:
-                    server.login(settings.smtp_user, settings.smtp_password)
-                server.send_message(msg)
-        else:
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
-                if settings.smtp_tls:
-                    server.starttls()
-                if settings.smtp_user and settings.smtp_password:
-                    server.login(settings.smtp_user, settings.smtp_password)
-                server.send_message(msg)
-
-        logger.info(f"Successfully sent email to {to_email} via SMTP ({settings.smtp_host})")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send email to {to_email} via SMTP: {e}", exc_info=True)
         return False
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    sender_email = settings.smtp_from_email or settings.smtp_user or "no-reply@crumbly.co.ke"
+    msg["From"] = formataddr((settings.smtp_from_name, sender_email))
+    msg["To"] = to_email
+
+    plain = text_content or "Please open this email in an HTML-compatible client to view its contents."
+    msg.set_content(plain)
+    msg.add_alternative(html_content, subtype="html")
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if settings.smtp_ssl:
+                with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+                    if settings.smtp_user and settings.smtp_password:
+                        server.login(settings.smtp_user, settings.smtp_password)
+                    server.send_message(msg)
+            else:
+                with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+                    if settings.smtp_tls:
+                        server.starttls()
+                    if settings.smtp_user and settings.smtp_password:
+                        server.login(settings.smtp_user, settings.smtp_password)
+                    server.send_message(msg)
+
+            logger.info(f"Successfully sent email to {to_email} via SMTP ({settings.smtp_host})")
+            return True
+        except (OSError, smtplib.SMTPException) as e:
+            if attempt < max_attempts:
+                logger.warning(
+                    f"SMTP attempt {attempt}/{max_attempts} to {to_email} failed ({e}). Retrying in 1.5s..."
+                )
+                time.sleep(1.5)
+            else:
+                logger.error(
+                    f"Failed to send email to {to_email} via SMTP after {max_attempts} attempts: {e}",
+                    exc_info=True,
+                )
+                return False
+        except Exception as e:
+            logger.error(f"Unexpected error sending email to {to_email} via SMTP: {e}", exc_info=True)
+            return False
+
+    return False
 
 
 async def send_email(
@@ -141,7 +158,13 @@ This link is valid for 1 hour. If you didn't request a password reset, you can s
 </body>
 </html>
 """
-    return await send_email(to_email, subject, html_content, text_content)
+    sent = await send_email(to_email, subject, html_content, text_content)
+    if not sent:
+        logger.warning(
+            f"[FALLBACK LINK] Password reset email delivery to {to_email} was not completed via SMTP. "
+            f"Direct reset link (valid 1h): {reset_url}"
+        )
+    return sent
 
 
 async def send_admin_invitation_email(
@@ -209,4 +232,10 @@ If you were not expecting this invitation, please contact your team administrato
 </body>
 </html>
 """
-    return await send_email(to_email, subject, html_content, text_content)
+    sent = await send_email(to_email, subject, html_content, text_content)
+    if not sent:
+        logger.warning(
+            f"[FALLBACK LINK] Administrator invitation email delivery to {to_email} was not completed via SMTP. "
+            f"Direct setup link (valid 48h): {setup_url}"
+        )
+    return sent

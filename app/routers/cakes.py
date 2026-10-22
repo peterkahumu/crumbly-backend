@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.models import Bakery, Cake, Role, User
+from app.models import Bakery, Cake, Category, Role, User
 from app.schemas.cake import CakeCreate, CakeResponse, CakeUpdate
 from app.utils.slugify import slugify
 
@@ -103,6 +103,7 @@ async def create_cake(
     await db.commit()
     await db.refresh(cake)
     cake.bakery = bakery
+    cake.category = await db.get(Category, req.categoryId)
 
     return cake
 
@@ -128,6 +129,7 @@ async def update_cake(
         cake.name = req.name.strip()
     if req.categoryId is not None:
         cake.categoryId = req.categoryId
+        cake.category = await db.get(Category, req.categoryId)
     if req.description is not None:
         cake.description = req.description.strip() if req.description else None
     if req.price is not None:

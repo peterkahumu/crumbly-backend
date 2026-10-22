@@ -59,6 +59,14 @@ class CakeBakery(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CakeCategory(BaseModel):
+    id: str
+    name: str
+    slug: str
+
+    model_config = {"from_attributes": True}
+
+
 class CakeResponse(BaseModel):
     id: str
     bakeryId: str
@@ -75,5 +83,6 @@ class CakeResponse(BaseModel):
     createdAt: datetime
     updatedAt: datetime
     bakery: CakeBakery | None = None
+    category: CakeCategory | None = None
 
     model_config = {"from_attributes": True}

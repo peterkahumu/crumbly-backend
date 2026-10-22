@@ -1,7 +1,8 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import require_admin, require_baker
@@ -131,25 +132,42 @@ async def get_baker_analytics(
         order_stmt = order_stmt.where(Order.createdAt <= to_dt)
     order_stmt = order_stmt.order_by(Order.createdAt.desc())
 
-    orders = (await db.execute(order_stmt)).scalars().all()
-
-    # Cakes query
-    cakes = (await db.execute(
-        select(Cake).options(selectinload(Cake.category)).where(Cake.bakeryId == bakery_id)
-    )).scalars().all()
-
-    # Portfolio query
-    portfolio_items = (await db.execute(
-        select(PortfolioItem).where(PortfolioItem.bakeryId == bakery_id)
-    )).scalars().all()
-
     # Reviews query
     review_stmt = select(Review).where(Review.bakeryId == bakery_id)
     if from_dt:
         review_stmt = review_stmt.where(Review.createdAt >= from_dt)
     if to_dt:
         review_stmt = review_stmt.where(Review.createdAt <= to_dt)
-    reviews = (await db.execute(review_stmt)).scalars().all()
+
+    # Execute independent stats queries concurrently
+    session_factory = async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
+
+    async def _fetch_orders():
+        async with session_factory() as s:
+            return (await s.execute(order_stmt)).scalars().all()
+
+    async def _fetch_cakes():
+        async with session_factory() as s:
+            return (await s.execute(
+                select(Cake).options(selectinload(Cake.category)).where(Cake.bakeryId == bakery_id)
+            )).scalars().all()
+
+    async def _fetch_portfolio():
+        async with session_factory() as s:
+            return (await s.execute(
+                select(PortfolioItem).where(PortfolioItem.bakeryId == bakery_id)
+            )).scalars().all()
+
+    async def _fetch_reviews():
+        async with session_factory() as s:
+            return (await s.execute(review_stmt)).scalars().all()
+
+    orders, cakes, portfolio_items, reviews = await asyncio.gather(
+        _fetch_orders(),
+        _fetch_cakes(),
+        _fetch_portfolio(),
+        _fetch_reviews(),
+    )
 
     # Aggregations
     orders_count = len(orders)
@@ -303,16 +321,31 @@ async def get_platform_analytics(
         order_stmt = order_stmt.where(Order.bakeryId == bakery_id)
     order_stmt = order_stmt.order_by(Order.createdAt.desc())
 
-    orders = (await db.execute(order_stmt)).scalars().all()
+    # Execute independent platform queries concurrently
+    session_factory = async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
 
-    # 2. Bakeries
-    bakeries = (await db.execute(select(Bakery).order_by(Bakery.createdAt.desc()))).scalars().all()
+    async def _fetch_orders():
+        async with session_factory() as s:
+            return (await s.execute(order_stmt)).scalars().all()
 
-    # 3. Cakes
-    cakes = (await db.execute(select(Cake).options(selectinload(Cake.category), selectinload(Cake.bakery)))).scalars().all()
+    async def _fetch_bakeries():
+        async with session_factory() as s:
+            return (await s.execute(select(Bakery).order_by(Bakery.createdAt.desc()))).scalars().all()
 
-    # 4. Reviews
-    reviews = (await db.execute(select(Review))).scalars().all()
+    async def _fetch_cakes():
+        async with session_factory() as s:
+            return (await s.execute(select(Cake).options(selectinload(Cake.category), selectinload(Cake.bakery)))).scalars().all()
+
+    async def _fetch_reviews():
+        async with session_factory() as s:
+            return (await s.execute(select(Review))).scalars().all()
+
+    orders, bakeries, cakes, reviews = await asyncio.gather(
+        _fetch_orders(),
+        _fetch_bakeries(),
+        _fetch_cakes(),
+        _fetch_reviews(),
+    )
 
     # Platform Totals
     orders_count = len(orders)

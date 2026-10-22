@@ -190,9 +190,7 @@ async def forgot_password(
     await send_password_reset_email(user.email, reset_url, user.name)
     
     return {
-        "message": "If an account with that email exists, we sent a password reset link.",
-        "resetUrl": reset_url,
-        "token": token,
+        "message": "If an account with that email exists, we sent a password reset link to your inbox.",
     }
 
 

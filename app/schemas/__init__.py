@@ -26,6 +26,7 @@ from app.schemas.bakery import (
 )
 from app.schemas.cake import (
     CakeBakery,
+    CakeCategory,
     CakeCreate,
     CakeResponse,
     CakeUpdate,
@@ -81,6 +82,7 @@ __all__ = [
     "BakerySettingsUpdate",
     # Cake
     "CakeBakery",
+    "CakeCategory",
     "CakeCreate",
     "CakeResponse",
     "CakeUpdate",

@@ -347,8 +347,14 @@ async def admin_invite_super_admin(
         recipient_name=target_user.name,
     )
 
+    message = (
+        f"Invitation email successfully sent to {clean_email}."
+        if email_sent
+        else f"Administrator created for {clean_email}, but email delivery requires SMTP configuration."
+    )
+
     return {
-        "message": f"Invitation successfully sent to {clean_email}.",
+        "message": message,
         "userId": target_user.id,
         "email": clean_email,
         "name": target_user.name,
